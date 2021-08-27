@@ -1,5 +1,5 @@
 const { AuthenticationError } = require('apollo-server-express');
-const { User } = require('../models');
+const { User, Book } = require('../models');
 const { signToken } = require('../utils/auth');
 
 const resolvers = {
@@ -13,65 +13,74 @@ const resolvers = {
   },
 
   Mutation: {
-    async login(parent, {username, email, password}) {
+    async login(parent, {email, password}, context) {
       //Find User based on credentials 
       console.log("resolve login");
 
       const user = await User.findOne({ email });
       if (!user) {
-        return res.status(400).json({ message: "Can't find this user" });
+        throw new AuthenticationError('No user found with this email address');
       }
       //Check with hook
       const correctPw = await user.isCorrectPassword(password);
       if (!correctPw) {
-        return res.status(400).json({ message: 'Wrong password!' });
+        throw new AuthenticationError('PassWord Error');
       }
       //Auth 
       const token = signToken(user);
+
       return { token, user };
     },
-    async addUser(parent , arg) {
+    async addUser(parent , { username, email, password }) {
       //Find a user based on the input
       console.log("resolve addUser");
 
-      const user = await User.create(arg);
+      const user = await User.create({ username, email, password });
       const token = signToken(user);
       return { token, user };
     },
-    async saveBook({ user, body }, res) {
+    async saveBook(parent, { newBook }, context) {
+
       console.log("resolve saveBook");
 
-      console.log(user);
-      try {
+      if (context.user) {
         //Tries to find the user and append the book to the array
         const updatedUser = await User.findOneAndUpdate(
-          { _id: user._id },
-          { $addToSet: { savedBooks: body } },
-          { new: true, runValidators: true }
+          { _id: context.user._id },
+          { $push: { savedBooks: newBook } },
+          { 
+            new: true,
+            runValidators: true 
+          }
         );
         //Returns the updated user
         return updatedUser;
       } 
-      catch (err) {
-        console.log(err);
-        return res.status(400).json(err);
+      else {
+        throw new AuthenticationError('SaveBook Error');
       }
     },
-    async removeBook({ user, params }, res) {
+    async removeBook(parent, { bookId }, context) {
       //Find User and remove last book from array
       console.log("resolve removeBook");
+      console.log({bookId});
 
-      const updatedUser = await User.findOneAndUpdate(
-        { _id: user._id },
-        { $pull: { savedBooks: { bookId: params.bookId } } },
-        { new: true }
-      );
-      //Checks if User exists
-      if (!updatedUser) {
-        return res.status(404).json({ message: "Couldn't find user with this id!" });
+      if (context.user) {
+        //Tries to find the user and append the book to the array
+        const updatedUser = await User.findOneAndUpdate(
+          { _id: context.user._id },
+          { $pull: { savedBooks: {bookId} } },
+          { 
+            new: true,
+            runValidators: true 
+          }
+        );
+        //Returns the updated user
+        return updatedUser;
+      } 
+      else {
+        throw new AuthenticationError('SaveBook Error');
       }
-      //Return Updated User
-      return updatedUser;
     },
   }
 };
